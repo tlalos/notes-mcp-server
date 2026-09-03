@@ -8,6 +8,9 @@ device running the app.
 It talks to the app's existing REST API over HTTPS using a bearer token — nothing new to install
 on the server.
 
+> **Setting this up (human or AI agent)?** Follow **[AGENTS.md](AGENTS.md)** — step‑by‑step install
+> and ready‑to‑paste config for Claude Desktop, Claude Code, Cursor/Windsurf/VS Code, and the Python SDK.
+
 ---
 
 ## Tools
@@ -95,10 +98,26 @@ Add to `claude_desktop_config.json`
 Restart Claude Desktop; the **notes** tools appear. Try: *"List my notes"*, *"Create a note titled
 Groceries with milk, eggs, bread"*, *"Read the note about the deploy log."*
 
-### Claude Agent SDK / other MCP clients
+### Claude Code (CLI)
 
-Any client that speaks MCP over stdio can launch `python -m notes_mcp.server` the same way.
-See [`examples/`](examples/) for a minimal programmatic client.
+```bash
+claude mcp add notes \
+  --env NOTES_API_URL=https://macross.no-ip.info \
+  --env NOTES_API_TOKEN=your-long-random-api-token \
+  -- python -m notes_mcp.server
+```
+
+### Cursor / Windsurf / VS Code / other MCP clients
+
+Add the same `mcpServers` block as above to the client's MCP config (e.g. `~/.cursor/mcp.json`,
+`.vscode/mcp.json`, or a project `.mcp.json`).
+
+### Claude Agent SDK / programmatic
+
+Any client that speaks MCP over stdio can launch `python -m notes_mcp.server`.
+See [`examples/list_and_create.py`](examples/list_and_create.py) for a minimal client.
+
+Full step‑by‑step for every client is in **[AGENTS.md](AGENTS.md)**.
 
 ---
 
