@@ -92,8 +92,10 @@ After registering, ask the agent to run the `health` tool (should return `{"ok":
 reach the server over HTTPS.
 
 ## 5. Available tools
-`list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `capture_markdown`, `health`.
-See [README.md](README.md#tools) for parameters and the plain-text vs. Markdown note on content.
+`list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `capture_markdown`,
+`capture_image`, `health`.
+See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, and how to
+insert images (`capture_image`).
 
 ## Notes for the agent
 - If `command: "python"` isn't found, try `python3`, or the absolute path to a Python 3.10+ interpreter.

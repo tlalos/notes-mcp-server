@@ -180,6 +180,44 @@ def capture_markdown(markdown: str, title: str = "", note_id: str = "") -> dict:
 
 
 @mcp.tool()
+def capture_image(image_url: str = "", image_path: str = "", image_base64: str = "",
+                  caption: str = "", title: str = "", note_id: str = "") -> dict:
+    """Insert a **real image** into a note. Provide the image as exactly ONE of:
+      - image_url    : an http(s) URL (the server downloads it), or
+      - image_path   : a local file path readable by this MCP process, or
+      - image_base64 : raw base64 (a `data:image/...;base64,` prefix is accepted and stripped).
+    Optional: `caption` (text placed above the image), and a target via `note_id` (append to that
+    note) or `title` (append to / create a note with that title). PNG/JPEG/GIF/BMP are supported.
+    Like all captures, the image is materialized by the desktop client, so a client must run at
+    least once for it to appear."""
+    if image_base64.strip():
+        b64 = image_base64.strip()
+        if b64.startswith("data:") and "," in b64:
+            b64 = b64.split(",", 1)[1]
+    elif image_path.strip():
+        with open(image_path.strip(), "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+    elif image_url.strip():
+        resp = httpx.get(image_url.strip(), timeout=30.0, follow_redirects=True)
+        resp.raise_for_status()
+        b64 = base64.b64encode(resp.content).decode("ascii")
+    else:
+        return {"error": "Provide one of image_url, image_path or image_base64."}
+
+    payload: dict[str, Any] = {"image": b64}
+    if caption.strip():
+        payload["text"] = caption
+    if note_id.strip():
+        payload["noteId"] = note_id.strip()
+    if title.strip():
+        payload["title"] = title.strip()
+    with _client() as c:
+        r = c.post("/api/inbox", json=payload)
+        r.raise_for_status()
+        return {"queued": True, "captureId": r.json().get("id")}
+
+
+@mcp.tool()
 def health() -> dict:
     """Check that the Notes server is reachable."""
     with httpx.Client(base_url=_base_url(), timeout=10.0) as c:

@@ -23,7 +23,14 @@ on the server.
 | `update_note(note_id, title=None, content=None, notebook=None, tags=None)` | Update fields; anything left `None` is unchanged. |
 | `delete_note(note_id)` | Delete a note (moved to Trash — restorable in the app). |
 | `capture_markdown(markdown, title="", note_id="")` | Append **rich Markdown** (headings, callouts, code, checklists, tables, links) to a note. |
+| `capture_image(image_url \| image_path \| image_base64, caption="", title="", note_id="")` | Insert a **real image** into a note (from a URL, local file, or base64). |
 | `health()` | Check the server is reachable. |
+
+### Inserting images
+Use **`capture_image`** to embed an actual picture — pass a URL, a local file path, or base64.
+(Plain `![alt](url)` Markdown in `create_note`/`capture_markdown` is treated as text/link, not a
+downloaded image.) Like other captures, images are rendered by the desktop client, so a client must
+run at least once for them to appear.
 
 ### Plain vs. rich content
 - **`create_note` / `update_note`** store the content as plain text. It appears immediately in the
