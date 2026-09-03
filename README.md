@@ -37,6 +37,27 @@ Use **`capture_image`** to embed an actual picture — pass a URL, a local file 
 downloaded image.) Like other captures, images are rendered by the desktop client, so a client must
 run at least once for them to appear.
 
+### Sections (collapsible titled boxes)
+The app's **titled section** — a bordered box with a shaded header (icon + bold title) over a body,
+collapsible in the app — is created via `capture_markdown` with a **`:::` fence**:
+
+```python
+capture_markdown(title="Trip", markdown="""
+::: 📌 Packing list
+Take these:
+
+- [ ] passport
+- [ ] chargers
+:::
+""")
+```
+
+- Start the line with `:::`, an optional leading **emoji** (becomes the icon), then the **title**;
+  close with `:::` on its own line.
+- The body is **full Markdown** (bullets, checklists, bold, links, even a table).
+- This is the real collapsible section block — different from a callout (which is a coloured strip,
+  not collapsible). See [AGENTS.md](AGENTS.md#7-creating-titled-sections-collapsible-boxes) for details.
+
 ### Tables
 Send a **GitHub-style Markdown table** via `capture_markdown` and the desktop client renders it as a
 real bordered table (shaded, bold header row). A table is a header row, a dashes separator row, then

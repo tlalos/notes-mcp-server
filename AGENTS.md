@@ -115,34 +115,71 @@ Do **not** expect `![](…)` inside `create_note` to become an image — `create
 Use `capture_image` or `capture_markdown` for images. Images are materialized by the desktop client,
 so a client must run at least once for them to appear.
 
-## 7. Creating grouped / titled sections
-To present a titled, visually-grouped block of content, use **`capture_markdown`** with a **callout**:
+## 7. Creating titled "sections" (collapsible boxes)
+The desktop app has a **titled section** block — a bordered box with a shaded header (an optional icon
++ a bold title) over a body, which the reader can collapse/expand. To create one over MCP, send
+**`capture_markdown`** with a **`:::` fence**. This is the real section block, not a callout.
+
+Syntax — an opening `:::` line with an optional leading emoji and a title, the body lines, then a
+closing `:::`:
 
 ```
-> [!info] Overview
-> This whole block shows as one titled, coloured section.
-> It can span multiple lines.
+::: 📌 Packing list
+Take these on the trip:
+
+- passport
+- charger
+- power bank
+:::
 ```
-Callout types: `info` / `note` (blue), `success` (green), `warning` (orange), `tip` (yellow).
-You can also group content with headings (`#`, `##`, `###`), fenced code blocks (```), task lists
-(`- [ ] item`), and tables (`| a | b |`). Example creating/append­ing to one note:
 
+Rules the renderer follows:
+- The line **must start with `:::`** (an optional `section` keyword is allowed: `::: section 📌 Title`).
+- A **leading emoji** right after `:::` becomes the section's icon; the rest of the line is the bold
+  title. No emoji is fine — then the whole line is the title. An empty title defaults to "Section".
+- Everything until the **closing `:::`** is the body, and the body is **full Markdown** — use headings,
+  bullets, `- [ ]` checklists, `**bold**`, links, even a table inside the section.
+- Always close the fence with `:::` on its own line. (If you forget, everything to the end of the note
+  becomes the body.)
+- Sections are collapsible in the app via the ▾/▸ chevron in the header; MCP-created ones already
+  include it.
+
+Full example with several sections in one note:
 ```
-capture_markdown(title="Release notes", markdown="""
-## Release 2.3
+capture_markdown(title="Trip to Rotterdam", markdown="""
+# Rotterdam 2026
 
-> [!success] Shipped
-> All checks passed.
+::: 🧳 To pack
+- [ ] passport
+- [ ] chargers + power bank
+- [ ] meds
+:::
 
-> [!warning] Follow-up
-> Rotate the API key next week.
+::: 📄 Documents
+Print these and keep a PDF copy on the phone:
 
-- [x] build
-- [ ] announce
+- hotel booking
+- train tickets
+:::
+
+::: ℹ️ Notes
+Weather looks rainy — **bring a jacket**. Contact: [hotel](https://example.com).
+:::
 """)
 ```
-(The desktop app also has a manual "titled section" block in its toolbar; over MCP, callouts are the
-equivalent grouped section.)
+
+### Callouts (a lighter alternative)
+If you just want a coloured, titled highlight (not a collapsible box), use a **callout** instead:
+```
+> [!info] Overview
+> This whole block shows as one titled, coloured strip.
+```
+Callout types: `info` / `note` (blue), `success` (green), `warning` (orange), `tip` (yellow).
+
+You can also group content with headings (`#`, `##`, `###`), fenced code blocks (```` ``` ````), task
+lists (`- [ ] item`), and tables (see §8). Use a stable `title` on `capture_markdown` to keep appending
+to the same note. Captures are materialized by the desktop client, so a client must run at least once
+for the note to appear.
 
 ## 8. Tables in notes
 Use **`capture_markdown`** with a **GitHub-style Markdown table** — the desktop client renders it as a
