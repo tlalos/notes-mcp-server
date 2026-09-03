@@ -144,13 +144,50 @@ capture_markdown(title="Release notes", markdown="""
 (The desktop app also has a manual "titled section" block in its toolbar; over MCP, callouts are the
 equivalent grouped section.)
 
-## 8. Attaching files to a note
+## 8. Tables in notes
+Use **`capture_markdown`** with a **GitHub-style Markdown table** — the desktop client renders it as a
+real bordered table (shaded, bold header row), not as text. The shape is a header row, a separator row
+of dashes, then one row per record. Outer pipes are optional; cells are trimmed.
+
+```
+| Name  | Role | Location |
+|-------|------|----------|
+| Ann   | Lead | Berlin   |
+| Bob   | Dev  | Lisbon   |
+```
+
+Rules the renderer follows:
+- A table is recognised only when a row of `|`-separated cells is **immediately followed by a separator
+  line** (dashes, pipes, optional colons/spaces), e.g. `|---|---|` or `---|:--:|---`. Without that
+  separator line the row is treated as plain text.
+- Alignment colons (`:---`, `:--:`, `---:`) are accepted but not visually applied — every column renders
+  left-aligned. The separator just has to be present.
+- Ragged rows are fine: short rows are padded with empty cells, and the column count is the widest row.
+- Cell text supports the usual inline formatting: `**bold**`, `*italic*`, `` `code` ``, and `[links](https://…)`.
+- Escape a literal pipe inside a cell as `\|`.
+
+Full example creating (or appending to) a note with a table:
+```
+capture_markdown(title="Team roster", markdown="""
+## Q3 on-call roster
+
+| Week | Primary   | Backup   | Notes                    |
+|------|-----------|----------|--------------------------|
+| 27   | **Ann**   | Bob      | Ann out Fri — Bob covers |
+| 28   | Bob       | Carol    | `oncall@acme` alias      |
+| 29   | Carol     | Ann      | [runbook](https://wiki/oncall) |
+""")
+```
+Tables, like other `capture_markdown` content, are materialized by the desktop client, so a client must
+run at least once for the note to appear. Use a stable `title` to keep appending to the same note.
+
+## 9. Attaching files to a note
 Notes can carry arbitrary file attachments (PDFs, docx, zips, images, anything). Unlike
 `capture_markdown`/`capture_image`, attachments are stored **directly** on the server — they do
 **not** need the desktop client to run to appear.
 
 - **`attach_file`** — pass the file as exactly one of:
-  - `file_path`   — a local file readable by the MCP process, e.g. `attach_file(note_id="…", file_path="/tmp/report.pdf")`
+  - `file_path`   — a local file readable by the MCP process
   - `file_url`    — an http(s) URL (downloaded by the MCP process)
   - `file_base64` — raw base64 (a `data:…;base64,…` prefix is accepted and stripped); pass `filename` with this form
   Optional `filename` (overrides the inferred name) and `content_type` (inferred from the name when omitted).
@@ -158,12 +195,25 @@ Notes can carry arbitrary file attachments (PDFs, docx, zips, images, anything).
 - **`download_attachment(attachment_id, save_path)`** — download one to a local path.
 - **`delete_attachment(attachment_id)`** — permanently remove one.
 
+Examples (get a `note_id` from `list_notes`/`create_note` first):
 ```
-attach_file(note_id="8f…", file_path="/home/me/specs/pricing.xlsx")
-list_attachments(note_id="8f…")   # → [{"id": "…", "fileName": "pricing.xlsx", "size": 20481, …}]
+# 1. Attach a local file (name + content type inferred from the path)
+attach_file(note_id="8f2c…", file_path="/home/me/specs/pricing.xlsx")
+
+# 2. Attach a file straight from the web
+attach_file(note_id="8f2c…", file_url="https://example.com/report.pdf")
+
+# 3. Attach from base64 (filename is required here; content type inferred from it)
+attach_file(note_id="8f2c…", file_base64="JVBERi0xLjQK…", filename="invoice.pdf")
+
+# 4. List, download, and delete
+list_attachments(note_id="8f2c…")
+#   → [{"id": "a1b2…", "fileName": "pricing.xlsx", "contentType": "application/…", "size": 20481, "createdUtc": "…"}]
+download_attachment(attachment_id="a1b2…", save_path="/tmp/pricing.xlsx")
+delete_attachment(attachment_id="a1b2…")
 ```
 
-## 9. Archiving notes
+## 10. Archiving notes
 Use **`archive_note(note_id, archived=True)`** to hide a note from the main list without deleting it,
 and `archive_note(note_id, archived=False)` to bring it back. Archived notes stay intact and are
 listed in the desktop app's archived view (the 🗄 toggle). `read_note` reports each note's `archived`

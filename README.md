@@ -37,11 +37,42 @@ Use **`capture_image`** to embed an actual picture — pass a URL, a local file 
 downloaded image.) Like other captures, images are rendered by the desktop client, so a client must
 run at least once for them to appear.
 
+### Tables
+Send a **GitHub-style Markdown table** via `capture_markdown` and the desktop client renders it as a
+real bordered table (shaded, bold header row). A table is a header row, a dashes separator row, then
+one row per record:
+
+```python
+capture_markdown(title="Team roster", markdown="""
+| Week | Primary | Backup | Notes                          |
+|------|---------|--------|--------------------------------|
+| 27   | **Ann** | Bob    | Ann out Fri — Bob covers       |
+| 28   | Bob     | Carol  | `oncall@acme` alias            |
+| 29   | Carol   | Ann    | [runbook](https://wiki/oncall) |
+""")
+```
+
+- The **separator row is required** — `| a | b |` on its own (no `|---|---|` under it) is treated as text.
+- Outer pipes are optional, cells are trimmed, and alignment colons (`:--:`) are accepted (all columns
+  render left-aligned). Short rows are padded; the widest row sets the column count.
+- Cells support `**bold**`, `*italic*`, `` `code` `` and `[links](url)`. Escape a literal pipe as `\|`.
+
 ### Attaching files
 Use **`attach_file`** to add any file (PDF, docx, zip, image, …) to a note — pass a local
-`file_path`, an http(s) `file_url`, or `file_base64`. Attachments are written **straight to the
-server**, so (unlike captures) they appear without the desktop client running. Manage them with
-`list_attachments`, `download_attachment` and `delete_attachment`.
+`file_path`, an http(s) `file_url`, or `file_base64` (with a `filename`). Attachments are written
+**straight to the server**, so (unlike captures) they appear without the desktop client running.
+Manage them with `list_attachments`, `download_attachment` and `delete_attachment`.
+
+```python
+attach_file(note_id="8f2c…", file_path="/home/me/specs/pricing.xlsx")   # local file
+attach_file(note_id="8f2c…", file_url="https://example.com/report.pdf")  # from the web
+attach_file(note_id="8f2c…", file_base64="JVBERi0xLjQK…", filename="invoice.pdf")
+
+list_attachments(note_id="8f2c…")
+#   → [{"id": "a1b2…", "fileName": "pricing.xlsx", "size": 20481, ...}]
+download_attachment(attachment_id="a1b2…", save_path="/tmp/pricing.xlsx")
+delete_attachment(attachment_id="a1b2…")
+```
 
 ### Plain vs. rich content
 - **`create_note` / `update_note`** store the content as plain text. It appears immediately in the
