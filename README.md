@@ -22,8 +22,13 @@ on the server.
 | `create_note(title, content="", notebook="", tags="")` | Create a note (plain text). Returns the new `id`. |
 | `update_note(note_id, title=None, content=None, notebook=None, tags=None)` | Update fields; anything left `None` is unchanged. |
 | `delete_note(note_id)` | Delete a note (moved to Trash — restorable in the app). |
+| `archive_note(note_id, archived=True)` | Hide a note from the main list without deleting it (or unarchive with `archived=False`). |
 | `capture_markdown(markdown, title="", note_id="")` | Append **rich Markdown** (headings, callouts, code, checklists, tables, links) to a note. |
 | `capture_image(image_url \| image_path \| image_base64, caption="", title="", note_id="")` | Insert a **real image** into a note (from a URL, local file, or base64). |
+| `list_attachments(note_id)` | List a note's file attachments (id, name, content type, size, created). |
+| `attach_file(note_id, file_path \| file_url \| file_base64, filename="", content_type="")` | Attach any file to a note (stored directly on the server — no desktop client needed). |
+| `download_attachment(attachment_id, save_path)` | Download an attachment to a local path. |
+| `delete_attachment(attachment_id)` | Permanently delete an attachment. |
 | `health()` | Check the server is reachable. |
 
 ### Inserting images
@@ -31,6 +36,12 @@ Use **`capture_image`** to embed an actual picture — pass a URL, a local file 
 (Plain `![alt](url)` Markdown in `create_note`/`capture_markdown` is treated as text/link, not a
 downloaded image.) Like other captures, images are rendered by the desktop client, so a client must
 run at least once for them to appear.
+
+### Attaching files
+Use **`attach_file`** to add any file (PDF, docx, zip, image, …) to a note — pass a local
+`file_path`, an http(s) `file_url`, or `file_base64`. Attachments are written **straight to the
+server**, so (unlike captures) they appear without the desktop client running. Manage them with
+`list_attachments`, `download_attachment` and `delete_attachment`.
 
 ### Plain vs. rich content
 - **`create_note` / `update_note`** store the content as plain text. It appears immediately in the

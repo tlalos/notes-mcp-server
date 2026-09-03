@@ -15,6 +15,7 @@ Run it (stdio transport, which is what Claude Desktop / most MCP clients use):
 from __future__ import annotations
 
 import base64
+import mimetypes
 import os
 from typing import Any
 
@@ -88,6 +89,7 @@ def read_note(note_id: str) -> dict:
             "notebook": n.get("notebook", ""),
             "tags": n.get("tags", ""),
             "pinned": n.get("pinned", False),
+            "archived": n.get("archived", False),
             "updatedUtc": n.get("updatedUtc"),
         }
 
@@ -139,6 +141,7 @@ def update_note(note_id: str, title: str | None = None, content: str | None = No
             "plainText": plain,
             "rowVersion": n.get("rowVersion", ""),
             "pinned": n.get("pinned", False),
+            "archived": n.get("archived", False),
             "tags": n.get("tags", "") if tags is None else tags,
             "notebook": n.get("notebook", "") if notebook is None else notebook,
             "reminderUtc": n.get("reminderUtc"),
@@ -215,6 +218,102 @@ def capture_image(image_url: str = "", image_path: str = "", image_base64: str =
         r = c.post("/api/inbox", json=payload)
         r.raise_for_status()
         return {"queued": True, "captureId": r.json().get("id")}
+
+
+@mcp.tool()
+def archive_note(note_id: str, archived: bool = True) -> dict:
+    """Archive a note (hide it from the main list without deleting), or unarchive it by
+    passing archived=false. Archived notes remain fully intact and searchable in the desktop
+    app's archived view. Returns the note id and its new archived state."""
+    with _client() as c:
+        action = "archive" if archived else "unarchive"
+        r = c.post(f"/api/notes/{note_id}/{action}")
+        if r.status_code == 404:
+            return {"error": "not found", "id": note_id}
+        r.raise_for_status()
+        return {"id": note_id, "archived": archived}
+
+
+@mcp.tool()
+def list_attachments(note_id: str) -> list[dict]:
+    """List the files attached to a note. Returns each attachment's id, file name, content
+    type, size in bytes and creation time (not the file bytes — use download_attachment)."""
+    with _client() as c:
+        r = c.get(f"/api/notes/{note_id}/attachments")
+        r.raise_for_status()
+        return [
+            {
+                "id": a.get("id"),
+                "fileName": a.get("fileName"),
+                "contentType": a.get("contentType"),
+                "size": a.get("size"),
+                "createdUtc": a.get("createdUtc"),
+            }
+            for a in r.json()
+        ]
+
+
+@mcp.tool()
+def attach_file(note_id: str, file_path: str = "", file_url: str = "", file_base64: str = "",
+                filename: str = "", content_type: str = "") -> dict:
+    """Attach a file to a note. Provide the file as exactly ONE of:
+      - file_path   : a local file path readable by this MCP process, or
+      - file_url    : an http(s) URL (downloaded by this process), or
+      - file_base64 : raw base64 (a `data:...;base64,` prefix is accepted and stripped).
+    `filename` names the attachment (required for file_base64; otherwise inferred from the path
+    or URL). `content_type` is optional and inferred from the filename when omitted. Any file type
+    is accepted (PDF, docx, zip, images, …). Returns the new attachment's id, name and size."""
+    if file_base64.strip():
+        b64 = file_base64.strip()
+        if b64.startswith("data:") and "," in b64:
+            b64 = b64.split(",", 1)[1]
+        data = base64.b64decode(b64)
+        name = filename.strip() or "file"
+    elif file_path.strip():
+        with open(file_path.strip(), "rb") as f:
+            data = f.read()
+        name = filename.strip() or os.path.basename(file_path.strip()) or "file"
+    elif file_url.strip():
+        resp = httpx.get(file_url.strip(), timeout=60.0, follow_redirects=True)
+        resp.raise_for_status()
+        data = resp.content
+        name = filename.strip() or os.path.basename(file_url.split("?", 1)[0].rstrip("/")) or "file"
+    else:
+        return {"error": "Provide one of file_path, file_url or file_base64."}
+
+    ct = content_type.strip() or (mimetypes.guess_type(name)[0] or "application/octet-stream")
+    with _client() as c:
+        r = c.post(
+            f"/api/notes/{note_id}/attachments",
+            content=data,
+            headers={"Content-Type": ct, "X-File-Name": name},
+        )
+        r.raise_for_status()
+        a = r.json()
+        return {"id": a.get("id"), "fileName": a.get("fileName"), "size": a.get("size")}
+
+
+@mcp.tool()
+def download_attachment(attachment_id: str, save_path: str) -> dict:
+    """Download an attachment (by its id, from list_attachments) and write it to `save_path`
+    on this machine. Returns the path written and the number of bytes."""
+    with _client() as c:
+        r = c.get(f"/api/attachments/{attachment_id}")
+        if r.status_code == 404:
+            return {"error": "not found", "id": attachment_id}
+        r.raise_for_status()
+        with open(save_path, "wb") as f:
+            f.write(r.content)
+        return {"savedTo": save_path, "bytes": len(r.content)}
+
+
+@mcp.tool()
+def delete_attachment(attachment_id: str) -> dict:
+    """Permanently delete an attachment by its id. Returns ok."""
+    with _client() as c:
+        r = c.delete(f"/api/attachments/{attachment_id}")
+        r.raise_for_status()
+        return {"id": attachment_id, "deleted": True}
 
 
 @mcp.tool()

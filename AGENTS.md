@@ -92,10 +92,11 @@ After registering, ask the agent to run the `health` tool (should return `{"ok":
 reach the server over HTTPS.
 
 ## 5. Available tools
-`list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `capture_markdown`,
-`capture_image`, `health`.
-See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, and how to
-insert images (`capture_image`).
+`list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `archive_note`,
+`capture_markdown`, `capture_image`, `list_attachments`, `attach_file`, `download_attachment`,
+`delete_attachment`, `health`.
+See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, how to
+insert images (`capture_image`), and how to attach files (`attach_file`).
 
 ## 6. Inserting images
 There are two ways to put a **real image** into a note:
@@ -142,6 +143,31 @@ capture_markdown(title="Release notes", markdown="""
 ```
 (The desktop app also has a manual "titled section" block in its toolbar; over MCP, callouts are the
 equivalent grouped section.)
+
+## 8. Attaching files to a note
+Notes can carry arbitrary file attachments (PDFs, docx, zips, images, anything). Unlike
+`capture_markdown`/`capture_image`, attachments are stored **directly** on the server — they do
+**not** need the desktop client to run to appear.
+
+- **`attach_file`** — pass the file as exactly one of:
+  - `file_path`   — a local file readable by the MCP process, e.g. `attach_file(note_id="…", file_path="/tmp/report.pdf")`
+  - `file_url`    — an http(s) URL (downloaded by the MCP process)
+  - `file_base64` — raw base64 (a `data:…;base64,…` prefix is accepted and stripped); pass `filename` with this form
+  Optional `filename` (overrides the inferred name) and `content_type` (inferred from the name when omitted).
+- **`list_attachments(note_id)`** — list a note's attachments (id, file name, content type, size, created time).
+- **`download_attachment(attachment_id, save_path)`** — download one to a local path.
+- **`delete_attachment(attachment_id)`** — permanently remove one.
+
+```
+attach_file(note_id="8f…", file_path="/home/me/specs/pricing.xlsx")
+list_attachments(note_id="8f…")   # → [{"id": "…", "fileName": "pricing.xlsx", "size": 20481, …}]
+```
+
+## 9. Archiving notes
+Use **`archive_note(note_id, archived=True)`** to hide a note from the main list without deleting it,
+and `archive_note(note_id, archived=False)` to bring it back. Archived notes stay intact and are
+listed in the desktop app's archived view (the 🗄 toggle). `read_note` reports each note's `archived`
+flag. This is distinct from `delete_note`, which moves a note to Trash.
 
 ## Notes for the agent
 - If `command: "python"` isn't found, try `python3`, or the absolute path to a Python 3.10+ interpreter.
