@@ -97,6 +97,52 @@ reach the server over HTTPS.
 See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, and how to
 insert images (`capture_image`).
 
+## 6. Inserting images
+There are two ways to put a **real image** into a note:
+
+1. **`capture_image`** — pass the image as exactly one of:
+   - `image_url`    — an http(s) URL (downloaded), e.g. `capture_image(image_url="https://…/pic.png", title="Trip", caption="Sunset")`
+   - `image_path`   — a local file path readable by the MCP process
+   - `image_base64` — raw base64 (a `data:image/…;base64,…` prefix is accepted and stripped)
+   Optional `caption` (text above the image), and target with `note_id` or `title`.
+
+2. **`capture_markdown`** with Markdown image syntax — these now render as embedded pictures:
+   - `![alt](https://example.com/pic.png)` (downloaded), or
+   - `![alt](data:image/png;base64,iVBOR…)` (inline data URI).
+
+Do **not** expect `![](…)` inside `create_note` to become an image — `create_note` stores plain text.
+Use `capture_image` or `capture_markdown` for images. Images are materialized by the desktop client,
+so a client must run at least once for them to appear.
+
+## 7. Creating grouped / titled sections
+To present a titled, visually-grouped block of content, use **`capture_markdown`** with a **callout**:
+
+```
+> [!info] Overview
+> This whole block shows as one titled, coloured section.
+> It can span multiple lines.
+```
+Callout types: `info` / `note` (blue), `success` (green), `warning` (orange), `tip` (yellow).
+You can also group content with headings (`#`, `##`, `###`), fenced code blocks (```), task lists
+(`- [ ] item`), and tables (`| a | b |`). Example creating/append­ing to one note:
+
+```
+capture_markdown(title="Release notes", markdown="""
+## Release 2.3
+
+> [!success] Shipped
+> All checks passed.
+
+> [!warning] Follow-up
+> Rotate the API key next week.
+
+- [x] build
+- [ ] announce
+""")
+```
+(The desktop app also has a manual "titled section" block in its toolbar; over MCP, callouts are the
+equivalent grouped section.)
+
 ## Notes for the agent
 - If `command: "python"` isn't found, try `python3`, or the absolute path to a Python 3.10+ interpreter.
 - On Windows, if a virtual environment is used, point `command` at that env's `python.exe`.
