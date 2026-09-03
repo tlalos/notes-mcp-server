@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "notes": {
+      "command": "python",
+      "args": ["-m", "notes_mcp.server"],
+      "env": {
+        "NOTES_API_URL": "https://macross.no-ip.info",
+        "NOTES_API_TOKEN": "your-long-random-api-token"
+      }
+    }
+  }
+}
