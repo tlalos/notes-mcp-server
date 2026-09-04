@@ -32,11 +32,12 @@ on the server.
 | `list_boards()` | List Kanban boards (id, name, updated). |
 | `read_board(board_id)` | A board's columns and cards (with ids). |
 | `create_board(name, template="basic", columns=None)` | Create a board (template or explicit columns). |
-| `rename_board(board_id, name)` / `delete_board(board_id)` | Rename / delete (→ Trash) a board. |
-| `add_column(board_id, title, color="")` / `delete_column(board_id, column)` | Add / remove a column. |
+| `rename_board(board_id, name)` / `delete_board(board_id)` / `undelete_board(board_id)` | Rename / trash / restore a board. |
+| `add_column(board_id, title, color="")` / `delete_column(board_id, column)` / `move_column(board_id, column, position)` | Add / remove / reorder a column. |
 | `add_card(board_id, column, title, …)` | Add a card (description, color, due, labels, checklist). |
 | `update_card(board_id, card_id, …)` | Update a card's fields (null = unchanged). |
 | `move_card(board_id, card_id, to_column, position=None)` | Move a card to another column. |
+| `archive_card(board_id, card_id)` / `unarchive_card(board_id, card_id, to_column="")` | Archive / restore a card. |
 | `delete_card(board_id, card_id)` | Delete a card. |
 | `health()` | Check the server is reachable. |
 

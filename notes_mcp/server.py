@@ -447,10 +447,11 @@ def _mutate_board(board_id: str, fn) -> dict:
 
 
 @mcp.tool()
-def list_boards() -> list[dict]:
-    """List Kanban boards (id, name, last-updated). Use read_board for a board's columns/cards."""
+def list_boards(deleted: bool = False) -> list[dict]:
+    """List Kanban boards (id, name, last-updated). Use read_board for a board's columns/cards. Pass
+    deleted=True to list trashed boards (restore one with undelete_board)."""
     with _client() as c:
-        r = c.get("/api/boards", params={"deleted": "false"})
+        r = c.get("/api/boards", params={"deleted": "true" if deleted else "false"})
         r.raise_for_status()
         return [{"id": b["id"], "name": b.get("name", ""), "updatedUtc": b.get("updatedUtc")}
                 for b in r.json()]
@@ -623,6 +624,73 @@ def delete_card(board_id: str, card_id: str) -> dict:
         col["Cards"].remove(card)
         return {"cardId": card_id}
     return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def archive_card(board_id: str, card_id: str) -> dict:
+    """Archive a card: hide it from the board without deleting it (restorable with unarchive_card, or in
+    the desktop app's board archive). Its origin column is remembered. Good for clearing 'Done' cards."""
+    def _fn(board):
+        data = board["data"]
+        col, card = _find_card(data, card_id)
+        if card is None:
+            raise ValueError(f"card {card_id} not found")
+        card["ArchivedFromColumnId"] = col.get("Id")
+        col["Cards"].remove(card)
+        data.setdefault("Archived", []).append(card)
+        return {"cardId": card_id, "archived": True}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def unarchive_card(board_id: str, card_id: str, to_column: str = "") -> dict:
+    """Restore an archived card to a column. By default it returns to the column it came from (or the
+    first column if that's gone); pass `to_column` (id or title) to place it elsewhere."""
+    def _fn(board):
+        data = board["data"]
+        archived = data.setdefault("Archived", [])
+        card = next((c for c in archived if c.get("Id") == card_id), None)
+        if card is None:
+            raise ValueError(f"archived card {card_id} not found")
+        target = _find_column(data, to_column) if to_column else None
+        if target is None and card.get("ArchivedFromColumnId"):
+            target = _find_column(data, card["ArchivedFromColumnId"])
+        if target is None:
+            target = data["Columns"][0] if data["Columns"] else None
+        if target is None:
+            raise ValueError("board has no columns to restore into")
+        archived.remove(card)
+        card.pop("ArchivedFromColumnId", None)
+        target.setdefault("Cards", []).append(card)
+        return {"cardId": card_id, "column": target.get("Title", "")}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def move_column(board_id: str, column: str, position: int) -> dict:
+    """Reorder a column. `column` is a column id or its exact title; `position` is the 0-based target
+    index among the columns."""
+    def _fn(board):
+        cols = board["data"]["Columns"]
+        target = _find_column(board["data"], column)
+        if target is None:
+            raise ValueError(f"column '{column}' not found")
+        cols.remove(target)
+        pos = max(0, min(int(position), len(cols)))
+        cols.insert(pos, target)
+        return {"columnId": target.get("Id")}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def undelete_board(board_id: str) -> dict:
+    """Restore a deleted board from Trash. Use `list_boards(deleted=True)` to find a trashed board's id."""
+    with _client() as c:
+        r = c.post(f"/api/boards/{board_id}/undelete")
+        if r.status_code == 404:
+            return {"error": "not found", "id": board_id}
+        r.raise_for_status()
+        return {"id": board_id, "restored": True}
 
 
 @mcp.tool()

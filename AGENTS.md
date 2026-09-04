@@ -96,7 +96,8 @@ reach the server over HTTPS.
 `capture_markdown`, `capture_image`.
 **Attachments:** `list_attachments`, `attach_file`, `download_attachment`, `delete_attachment`.
 **Kanban boards:** `list_boards`, `read_board`, `create_board`, `rename_board`, `delete_board`,
-`add_column`, `delete_column`, `add_card`, `update_card`, `move_card`, `delete_card`.
+`undelete_board`, `add_column`, `delete_column`, `move_column`, `add_card`, `update_card`, `move_card`,
+`archive_card`, `unarchive_card`, `delete_card`.
 **Misc:** `health`.
 See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, how to
 insert images (`capture_image`), attach files (`attach_file`), and manage boards (§10).
@@ -281,10 +282,14 @@ read_board(board_id="b1…")   # full structure: columns[] each with cards[] (id
 
 update_card(board_id="b1…", card_id="k3…", color="green", due="")   # due="" clears the date
 move_card(board_id="b1…", card_id="k3…", to_column="In progress")   # optional position=<0-based index>
+move_column(board_id="b1…", column="Blocked", position=0)           # reorder a column
+archive_card(board_id="b1…", card_id="k3…")                         # hide a done card (restorable)
+unarchive_card(board_id="b1…", card_id="k3…", to_column="To do")    # bring it back (defaults to origin)
 delete_card(board_id="b1…", card_id="k3…")
 delete_column(board_id="b1…", column="Blocked")
 rename_board(board_id="b1…", name="Sprint 42 (final)")
-delete_board(board_id="b1…")                                        # -> Trash (restorable in the app)
+delete_board(board_id="b1…")                                        # -> Trash
+list_boards(deleted=True); undelete_board(board_id="b1…")           # find & restore a trashed board
 ```
 
 Notes:
@@ -293,8 +298,22 @@ Notes:
 - **`due`** is a date string `"YYYY-MM-DD"`.
 - **`labels`** is a list of colour keys; **`checklist`** is a list of strings, or `{"text","done"}` dicts.
   On `update_card`, passing `labels`/`checklist` replaces the whole list.
+- **Archive vs delete:** `archive_card` hides a card (restorable, kept in the board's archive);
+  `delete_card` removes it. `delete_board` trashes a board; `undelete_board` restores it.
 - Updates use optimistic concurrency and retry automatically if the board changed on the server; a
   persistent clash returns `{"error": "conflict: …"}`.
+
+### Instructing your agent to use boards
+Drop something like this into your agent's system prompt / instructions so it knows the capability
+exists:
+
+> You can manage the user's Kanban boards through the Notes MCP server. Use `list_boards` /
+> `read_board` to see boards, columns and cards (always read a board first to get the column and card
+> **ids** you'll need). Create boards with `create_board` (templates: basic, simple, sprint, weekly,
+> blank). Add work with `add_card` (title, description, colour, `due` as YYYY-MM-DD, labels, checklist)
+> and organise it with `move_card` between columns, `add_column` / `move_column`, `update_card` to edit
+> a card, `archive_card` when work is done, and `delete_card` / `delete_board` to remove things. Prefer
+> archiving finished cards over deleting them. Board changes apply immediately — no desktop app needed.
 
 ## Notes for the agent
 - If `command: "python"` isn't found, try `python3`, or the absolute path to a Python 3.10+ interpreter.
