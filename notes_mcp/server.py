@@ -2,7 +2,8 @@
 Notes MCP server.
 
 Exposes your self-hosted Notes app (the ASP.NET Core REST API behind the desktop client)
-to any MCP-capable agent so it can create, read, list, update and delete notes.
+to any MCP-capable agent so it can create, read, list, update and delete notes, attach files,
+and manage Kanban boards (columns and cards).
 
 Configuration (environment variables):
   NOTES_API_URL    Base URL of your Notes server, e.g. https://macross.no-ip.info
@@ -15,8 +16,10 @@ Run it (stdio transport, which is what Claude Desktop / most MCP clients use):
 from __future__ import annotations
 
 import base64
+import json
 import mimetypes
 import os
+import uuid
 from typing import Any
 
 import httpx
@@ -314,6 +317,312 @@ def delete_attachment(attachment_id: str) -> dict:
         r = c.delete(f"/api/attachments/{attachment_id}")
         r.raise_for_status()
         return {"id": attachment_id, "deleted": True}
+
+
+# ---------------------------------------------------------------------------
+# Kanban boards
+#
+# A board is one row on the server with a `data` JSON blob holding its columns
+# and cards. That blob uses PascalCase keys (Columns, Cards, Title, …) and GUID
+# ids — the shape the desktop client reads/writes. These tools hide that: they
+# read the board, mutate the parsed structure, and PUT it back with optimistic
+# concurrency (rowVersion), retrying if it changed underneath.
+# ---------------------------------------------------------------------------
+
+# Column starter sets, mirroring the desktop app's board templates.
+_TEMPLATES = {
+    "basic": ["To do", "In progress", "In review", "Done"],
+    "simple": ["To do", "Doing", "Done"],
+    "sprint": ["Backlog", "To do", "In progress", "Review", "Done"],
+    "weekly": ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"],
+    "blank": [],
+}
+# Pleasant colour order for auto-assigning list colours (matches the client).
+_CYCLE = ["purple", "orange", "blue", "green", "red", "yellow", "grey"]
+# Valid card/column colour keys.
+_COLORS = {"red", "orange", "yellow", "green", "blue", "purple", "grey"}
+
+
+def _iso_due(due: str) -> str | None:
+    due = (due or "").strip()
+    if not due:
+        return None
+    return due if "T" in due else due + "T00:00:00"
+
+
+def _norm_checklist(items: Any) -> list[dict]:
+    out = []
+    for it in items or []:
+        if isinstance(it, dict):
+            out.append({"Text": str(it.get("text", it.get("Text", ""))),
+                        "Done": bool(it.get("done", it.get("Done", False)))})
+        else:
+            out.append({"Text": str(it), "Done": False})
+    return out
+
+
+def _new_card(title: str, description: str, color: str, due: str,
+              labels: Any, checklist: Any) -> dict:
+    card: dict[str, Any] = {
+        "Id": str(uuid.uuid4()),
+        "Title": title,
+        "Description": description or "",
+        "Color": color or "",
+        "Labels": list(labels or []),
+    }
+    iso = _iso_due(due)
+    if iso:
+        card["Due"] = iso
+    if checklist:
+        card["Checklist"] = _norm_checklist(checklist)
+    return card
+
+
+def _card_out(card: dict) -> dict:
+    return {
+        "id": card.get("Id"),
+        "title": card.get("Title", ""),
+        "description": card.get("Description", ""),
+        "color": card.get("Color", ""),
+        "due": card.get("Due"),
+        "labels": card.get("Labels", []),
+        "checklist": [{"text": ci.get("Text", ""), "done": bool(ci.get("Done", False))}
+                      for ci in card.get("Checklist", [])],
+    }
+
+
+def _parse_board_data(dto: dict) -> dict:
+    raw = dto.get("data") or ""
+    try:
+        obj = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        obj = {}
+    obj.setdefault("Columns", [])
+    obj.setdefault("Archived", [])
+    return obj
+
+
+def _find_column(data: dict, key: str) -> dict | None:
+    for col in data["Columns"]:
+        if col.get("Id") == key:
+            return col
+    for col in data["Columns"]:
+        if str(col.get("Title", "")).strip().lower() == str(key).strip().lower():
+            return col
+    return None
+
+
+def _find_card(data: dict, card_id: str):
+    for col in data["Columns"]:
+        for card in col.get("Cards", []):
+            if card.get("Id") == card_id:
+                return col, card
+    return None, None
+
+
+def _mutate_board(board_id: str, fn) -> dict:
+    """GET the board, let fn(board) mutate {"name","data"} in place, PUT it back with the
+    rowVersion. Retries on a 409 (someone else saved in between). fn may raise ValueError to
+    abort with a clean error, and may return a dict merged into the result."""
+    for _ in range(4):
+        with _client() as c:
+            r = c.get(f"/api/boards/{board_id}")
+            if r.status_code == 404:
+                return {"error": "not found", "id": board_id}
+            r.raise_for_status()
+            dto = r.json()
+            board = {"name": dto.get("name", ""), "data": _parse_board_data(dto)}
+            try:
+                extra = fn(board) or {}
+            except ValueError as e:
+                return {"error": str(e)}
+            payload = {"name": board["name"], "data": json.dumps(board["data"]),
+                       "rowVersion": dto.get("rowVersion", "")}
+            pr = c.put(f"/api/boards/{board_id}", json=payload)
+            if pr.status_code == 409:
+                continue   # board changed on the server; re-read and re-apply
+            pr.raise_for_status()
+            return {"id": board_id, "updated": True, **extra}
+    return {"error": "conflict: the board kept changing on the server; try again"}
+
+
+@mcp.tool()
+def list_boards() -> list[dict]:
+    """List Kanban boards (id, name, last-updated). Use read_board for a board's columns/cards."""
+    with _client() as c:
+        r = c.get("/api/boards", params={"deleted": "false"})
+        r.raise_for_status()
+        return [{"id": b["id"], "name": b.get("name", ""), "updatedUtc": b.get("updatedUtc")}
+                for b in r.json()]
+
+
+@mcp.tool()
+def read_board(board_id: str) -> dict:
+    """Read a board's full structure: its columns (id, title, colour) and each column's cards
+    (id, title, description, colour, due, labels, checklist). Card/column ids are needed by the
+    add/update/move/delete tools."""
+    with _client() as c:
+        r = c.get(f"/api/boards/{board_id}")
+        if r.status_code == 404:
+            return {"error": "not found", "id": board_id}
+        r.raise_for_status()
+        dto = r.json()
+        data = _parse_board_data(dto)
+        columns = [{
+            "id": col.get("Id"),
+            "title": col.get("Title", ""),
+            "color": col.get("Color", ""),
+            "cards": [_card_out(card) for card in col.get("Cards", [])],
+        } for col in data["Columns"]]
+        return {"id": dto["id"], "name": dto.get("name", ""), "columns": columns,
+                "archivedCount": len(data.get("Archived", []))}
+
+
+@mcp.tool()
+def create_board(name: str, template: str = "basic", columns: list[str] | None = None) -> dict:
+    """Create a Kanban board. Either pick a `template` (basic, simple, sprint, weekly, blank) or pass
+    an explicit `columns` list of column titles (overrides template). Returns the new board id."""
+    titles = columns if columns else _TEMPLATES.get(template, _TEMPLATES["basic"])
+    data = {
+        "Columns": [{"Id": str(uuid.uuid4()), "Title": t, "Color": _CYCLE[i % len(_CYCLE)], "Cards": []}
+                    for i, t in enumerate(titles)],
+        "Archived": [],
+    }
+    with _client() as c:
+        r = c.post("/api/boards", json={"name": name, "data": json.dumps(data)})
+        r.raise_for_status()
+        b = r.json()
+        return {"id": b["id"], "name": b.get("name", name)}
+
+
+@mcp.tool()
+def rename_board(board_id: str, name: str) -> dict:
+    """Rename a board."""
+    def _fn(board):
+        board["name"] = name
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def delete_board(board_id: str) -> dict:
+    """Delete a board (moved to Trash, restorable in the desktop app)."""
+    with _client() as c:
+        r = c.delete(f"/api/boards/{board_id}")
+        if r.status_code == 404:
+            return {"error": "not found", "id": board_id}
+        r.raise_for_status()
+        return {"id": board_id, "deleted": True}
+
+
+@mcp.tool()
+def add_column(board_id: str, title: str, color: str = "") -> dict:
+    """Add a column (list) to a board. `color` is an optional key: red, orange, yellow, green, blue,
+    purple, grey (auto-assigned if omitted). Returns the new column id."""
+    def _fn(board):
+        cols = board["data"]["Columns"]
+        col = {"Id": str(uuid.uuid4()), "Title": title,
+               "Color": color if color in _COLORS else _CYCLE[len(cols) % len(_CYCLE)], "Cards": []}
+        cols.append(col)
+        return {"columnId": col["Id"]}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def delete_column(board_id: str, column: str) -> dict:
+    """Delete a column and its cards. `column` is a column id or its exact title."""
+    def _fn(board):
+        target = _find_column(board["data"], column)
+        if target is None:
+            raise ValueError(f"column '{column}' not found")
+        board["data"]["Columns"].remove(target)
+        return {"removedCards": len(target.get("Cards", []))}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def add_card(board_id: str, column: str, title: str, description: str = "", color: str = "",
+             due: str = "", labels: list[str] | None = None, checklist: list | None = None) -> dict:
+    """Add a card to a column. `column` is a column id or its exact title. Optional: `description`,
+    `color` (red/orange/yellow/green/blue/purple/grey), `due` ("YYYY-MM-DD"), `labels` (colour keys),
+    and `checklist` (a list of strings, or {"text","done"} dicts). Returns the new card id."""
+    def _fn(board):
+        target = _find_column(board["data"], column)
+        if target is None:
+            raise ValueError(f"column '{column}' not found")
+        card = _new_card(title, description, color, due, labels, checklist)
+        target.setdefault("Cards", []).append(card)
+        return {"cardId": card["Id"]}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def update_card(board_id: str, card_id: str, title: str | None = None, description: str | None = None,
+                color: str | None = None, due: str | None = None, labels: list[str] | None = None,
+                checklist: list | None = None) -> dict:
+    """Update a card's fields; anything left null/None is unchanged. `due=""` clears the due date;
+    `labels`/`checklist` replace the whole list when provided (checklist items may be strings or
+    {"text","done"} dicts)."""
+    def _fn(board):
+        data = board["data"]
+        _, card = _find_card(data, card_id)
+        if card is None:
+            for c2 in data.get("Archived", []):
+                if c2.get("Id") == card_id:
+                    card = c2
+                    break
+        if card is None:
+            raise ValueError(f"card {card_id} not found")
+        if title is not None:
+            card["Title"] = title
+        if description is not None:
+            card["Description"] = description
+        if color is not None:
+            card["Color"] = color
+        if labels is not None:
+            card["Labels"] = list(labels)
+        if checklist is not None:
+            card["Checklist"] = _norm_checklist(checklist)
+        if due is not None:
+            if due == "":
+                card.pop("Due", None)
+            else:
+                card["Due"] = _iso_due(due)
+        return {"cardId": card_id}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def move_card(board_id: str, card_id: str, to_column: str, position: int | None = None) -> dict:
+    """Move a card to another column. `to_column` is a column id or its exact title. `position` is an
+    optional 0-based index within the target column (appended to the end if omitted)."""
+    def _fn(board):
+        data = board["data"]
+        col, card = _find_card(data, card_id)
+        if card is None:
+            raise ValueError(f"card {card_id} not found")
+        target = _find_column(data, to_column)
+        if target is None:
+            raise ValueError(f"column '{to_column}' not found")
+        col["Cards"].remove(card)
+        cards = target.setdefault("Cards", [])
+        if position is None or position < 0 or position > len(cards):
+            cards.append(card)
+        else:
+            cards.insert(position, card)
+        return {"cardId": card_id}
+    return _mutate_board(board_id, _fn)
+
+
+@mcp.tool()
+def delete_card(board_id: str, card_id: str) -> dict:
+    """Delete a card from a board."""
+    def _fn(board):
+        col, card = _find_card(board["data"], card_id)
+        if card is None:
+            raise ValueError(f"card {card_id} not found")
+        col["Cards"].remove(card)
+        return {"cardId": card_id}
+    return _mutate_board(board_id, _fn)
 
 
 @mcp.tool()

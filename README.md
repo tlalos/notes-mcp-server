@@ -29,6 +29,15 @@ on the server.
 | `attach_file(note_id, file_path \| file_url \| file_base64, filename="", content_type="")` | Attach any file to a note (stored directly on the server — no desktop client needed). |
 | `download_attachment(attachment_id, save_path)` | Download an attachment to a local path. |
 | `delete_attachment(attachment_id)` | Permanently delete an attachment. |
+| `list_boards()` | List Kanban boards (id, name, updated). |
+| `read_board(board_id)` | A board's columns and cards (with ids). |
+| `create_board(name, template="basic", columns=None)` | Create a board (template or explicit columns). |
+| `rename_board(board_id, name)` / `delete_board(board_id)` | Rename / delete (→ Trash) a board. |
+| `add_column(board_id, title, color="")` / `delete_column(board_id, column)` | Add / remove a column. |
+| `add_card(board_id, column, title, …)` | Add a card (description, color, due, labels, checklist). |
+| `update_card(board_id, card_id, …)` | Update a card's fields (null = unchanged). |
+| `move_card(board_id, card_id, to_column, position=None)` | Move a card to another column. |
+| `delete_card(board_id, card_id)` | Delete a card. |
 | `health()` | Check the server is reachable. |
 
 ### Inserting images
@@ -94,6 +103,23 @@ list_attachments(note_id="8f2c…")
 download_attachment(attachment_id="a1b2…", save_path="/tmp/pricing.xlsx")
 delete_attachment(attachment_id="a1b2…")
 ```
+
+### Kanban boards
+Boards have **columns** (lists) holding **cards**. Board tools talk directly to the server (no desktop
+client needed). Get card/column **ids** from `read_board` before updating, moving, or deleting.
+
+```python
+create_board(name="Sprint 42", template="sprint")   # basic|simple|sprint|weekly|blank, or columns=[...]
+add_card(board_id="b1…", column="To do", title="Wire up login",
+         color="blue", due="2026-09-15", checklist=["design", {"text": "implement", "done": True}])
+read_board(board_id="b1…")                            # columns[] -> cards[] with ids
+move_card(board_id="b1…", card_id="k3…", to_column="In progress")
+```
+
+- Colours: `red, orange, yellow, green, blue, purple, grey`. `due` is `"YYYY-MM-DD"`. `labels` is a list
+  of colour keys; `checklist` is strings or `{"text","done"}` dicts.
+- Updates use optimistic concurrency and retry on conflicts automatically. See
+  [AGENTS.md §11](AGENTS.md#11-kanban-boards-columns--cards) for the full flow.
 
 ### Plain vs. rich content
 - **`create_note` / `update_note`** store the content as plain text. It appears immediately in the

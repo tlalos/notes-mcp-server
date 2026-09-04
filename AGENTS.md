@@ -92,11 +92,14 @@ After registering, ask the agent to run the `health` tool (should return `{"ok":
 reach the server over HTTPS.
 
 ## 5. Available tools
-`list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `archive_note`,
-`capture_markdown`, `capture_image`, `list_attachments`, `attach_file`, `download_attachment`,
-`delete_attachment`, `health`.
+**Notes:** `list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `archive_note`,
+`capture_markdown`, `capture_image`.
+**Attachments:** `list_attachments`, `attach_file`, `download_attachment`, `delete_attachment`.
+**Kanban boards:** `list_boards`, `read_board`, `create_board`, `rename_board`, `delete_board`,
+`add_column`, `delete_column`, `add_card`, `update_card`, `move_card`, `delete_card`.
+**Misc:** `health`.
 See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, how to
-insert images (`capture_image`), and how to attach files (`attach_file`).
+insert images (`capture_image`), attach files (`attach_file`), and manage boards (§10).
 
 ## 6. Inserting images
 There are two ways to put a **real image** into a note:
@@ -256,8 +259,46 @@ and `archive_note(note_id, archived=False)` to bring it back. Archived notes sta
 listed in the desktop app's archived view (the 🗄 toggle). `read_note` reports each note's `archived`
 flag. This is distinct from `delete_note`, which moves a note to Trash.
 
+## 11. Kanban boards (columns & cards)
+Boards are separate from notes. Each board has **columns** (lists) that hold **cards**. Board tools
+talk **directly** to the server (no desktop client needed to materialize). Every card and column has a
+stable **id** — get ids from `read_board` before you update / move / delete.
+
+Typical flow:
+```
+list_boards()                                             # -> [{"id","name","updatedUtc"}, …]
+create_board(name="Sprint 42", template="sprint")        # -> {"id": "b1…"}
+#   templates: basic | simple | sprint | weekly | blank   (or pass columns=["A","B","C"])
+
+add_column(board_id="b1…", title="Blocked", color="red") # -> {"columnId": "c9…"}
+
+add_card(board_id="b1…", column="To do", title="Wire up login",
+         description="OAuth + session", color="blue", due="2026-09-15",
+         labels=["blue"], checklist=["design", {"text": "implement", "done": True}])
+#   column = a column id OR its exact title            -> {"cardId": "k3…"}
+
+read_board(board_id="b1…")   # full structure: columns[] each with cards[] (ids, title, desc, colour, due, labels, checklist)
+
+update_card(board_id="b1…", card_id="k3…", color="green", due="")   # due="" clears the date
+move_card(board_id="b1…", card_id="k3…", to_column="In progress")   # optional position=<0-based index>
+delete_card(board_id="b1…", card_id="k3…")
+delete_column(board_id="b1…", column="Blocked")
+rename_board(board_id="b1…", name="Sprint 42 (final)")
+delete_board(board_id="b1…")                                        # -> Trash (restorable in the app)
+```
+
+Notes:
+- **Colours** are keys: `red`, `orange`, `yellow`, `green`, `blue`, `purple`, `grey` (used for a card's
+  accent and a column's header; auto-assigned to new columns when omitted).
+- **`due`** is a date string `"YYYY-MM-DD"`.
+- **`labels`** is a list of colour keys; **`checklist`** is a list of strings, or `{"text","done"}` dicts.
+  On `update_card`, passing `labels`/`checklist` replaces the whole list.
+- Updates use optimistic concurrency and retry automatically if the board changed on the server; a
+  persistent clash returns `{"error": "conflict: …"}`.
+
 ## Notes for the agent
 - If `command: "python"` isn't found, try `python3`, or the absolute path to a Python 3.10+ interpreter.
 - On Windows, if a virtual environment is used, point `command` at that env's `python.exe`.
 - `read_note` returns note text only if the Notes server exposes `PlainText` (recent server build).
 - `capture_markdown` content is rendered by the desktop client, so it appears once a client runs.
+- Board tools apply immediately server-side (no client needed); notes captures need a client to render.
