@@ -694,6 +694,45 @@ def undelete_board(board_id: str) -> dict:
 
 
 @mcp.tool()
+def search_boards(query: str, limit: int = 50) -> list[dict]:
+    """Search across all boards for cards matching a term (matches a card's title, description and
+    checklist items), returning each hit with its board/column context and card id. Use this to find
+    or locate cards; notes are searched separately with `list_notes(query=...)`."""
+    q = (query or "").strip().lower()
+    if not q:
+        return []
+    hits: list[dict] = []
+    with _client() as c:
+        r = c.get("/api/boards", params={"deleted": "false"})
+        r.raise_for_status()
+        for b in r.json():
+            try:
+                rr = c.get(f"/api/boards/{b['id']}")
+                if rr.status_code != 200:
+                    continue
+                dto = rr.json()
+            except Exception:
+                continue
+            data = _parse_board_data(dto)
+            for col in data["Columns"]:
+                for card in col.get("Cards", []):
+                    title = card.get("Title", "") or ""
+                    desc = card.get("Description", "") or ""
+                    checklist = " ".join(ci.get("Text", "") for ci in card.get("Checklist", []))
+                    if q in f"{title}\n{desc}\n{checklist}".lower():
+                        where = ("title" if q in title.lower()
+                                 else "description" if q in desc.lower() else "checklist")
+                        hits.append({
+                            "boardId": dto["id"], "boardName": dto.get("name", ""),
+                            "column": col.get("Title", ""), "cardId": card.get("Id"),
+                            "cardTitle": title, "matchedIn": where,
+                        })
+                        if len(hits) >= max(1, limit):
+                            return hits
+    return hits
+
+
+@mcp.tool()
 def health() -> dict:
     """Check that the Notes server is reachable."""
     with httpx.Client(base_url=_base_url(), timeout=10.0) as c:

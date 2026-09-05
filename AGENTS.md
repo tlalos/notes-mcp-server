@@ -95,9 +95,12 @@ reach the server over HTTPS.
 **Notes:** `list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `archive_note`,
 `capture_markdown`, `capture_image`.
 **Attachments:** `list_attachments`, `attach_file`, `download_attachment`, `delete_attachment`.
-**Kanban boards:** `list_boards`, `read_board`, `create_board`, `rename_board`, `delete_board`,
-`undelete_board`, `add_column`, `delete_column`, `move_column`, `add_card`, `update_card`, `move_card`,
-`archive_card`, `unarchive_card`, `delete_card`.
+**Kanban boards:** `list_boards`, `read_board`, `search_boards`, `create_board`, `rename_board`,
+`delete_board`, `undelete_board`, `add_column`, `delete_column`, `move_column`, `add_card`,
+`update_card`, `move_card`, `archive_card`, `unarchive_card`, `delete_card`.
+
+**Searching:** notes → `list_notes(query="…")` (matches title, text, tags); board cards →
+`search_boards(query="…")` (matches card title, description, checklist).
 **Misc:** `health`.
 See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, how to
 insert images (`capture_image`), attach files (`attach_file`), and manage boards (§10).
