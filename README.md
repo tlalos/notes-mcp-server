@@ -34,6 +34,9 @@ on the server.
 | `read_board(board_id)` | A board's columns and cards (with ids). |
 | `search_boards(query, limit=50)` | Search all boards' cards (title, description, checklist) → hits with board/column/card context. |
 | `get_board_images(board_id, out_dir="")` | Get board card cover images (saves PNGs to `out_dir`, or lists which cards have images). |
+| `search_all(query, limit=30)` | Search **notes + board cards** together → `{"notes":[…], "boards":[…]}`. |
+| `list_whiteboards()` | List whiteboards (id, name, updated). |
+| `get_whiteboard_images(whiteboard_id, out_dir="")` | Get a whiteboard's image objects (saves PNGs, or lists them). |
 | `create_board(name, template="basic", columns=None)` | Create a board (template or explicit columns). |
 | `rename_board(board_id, name)` / `delete_board(board_id)` / `undelete_board(board_id)` | Rename / trash / restore a board. |
 | `add_column(board_id, title, color="")` / `delete_column(board_id, column)` / `move_column(board_id, column, position)` | Add / remove / reorder a column. |

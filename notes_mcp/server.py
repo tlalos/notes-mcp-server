@@ -102,6 +102,10 @@ def search_notes(query: str, limit: int = 30, context_chars: int = 160, deep: bo
     archived notes. If a normal search misses something, pass deep=True to scan every note's body
     (thorough but slower). Returns [{id, title, snippet, matchedIn}]. Prefer this over list_notes when
     searching note *content*."""
+    return _search_notes_impl(query, limit, context_chars, deep)
+
+
+def _search_notes_impl(query: str, limit: int = 30, context_chars: int = 160, deep: bool = False) -> list[dict]:
     tokens = [t for t in _fold(query).split() if t]
     if not tokens:
         return []
@@ -792,7 +796,11 @@ def undelete_board(board_id: str) -> dict:
 def search_boards(query: str, limit: int = 50) -> list[dict]:
     """Search across all boards for cards matching a term (matches a card's title, description and
     checklist items), returning each hit with its board/column context and card id. Use this to find
-    or locate cards; notes are searched separately with `list_notes(query=...)`."""
+    or locate cards; notes are searched separately with `search_notes`/`list_notes`."""
+    return _search_boards_impl(query, limit)
+
+
+def _search_boards_impl(query: str, limit: int = 50) -> list[dict]:
     q = (query or "").strip().lower()
     if not q:
         return []
@@ -858,6 +866,67 @@ def get_board_images(board_id: str, out_dir: str = "") -> list[dict]:
             else:
                 entry["hasImage"] = True
             out.append(entry)
+    return out
+
+
+@mcp.tool()
+def search_all(query: str, limit: int = 30) -> dict:
+    """Search **notes and board cards together** in one call. Returns
+    {"notes": [...], "boards": [...]} — notes via the accent/case-insensitive snippet search, board
+    cards via the card search. Use this when you don't know whether the thing lives in a note or on a
+    board."""
+    return {
+        "notes": _search_notes_impl(query, limit),
+        "boards": _search_boards_impl(query, limit),
+    }
+
+
+def _parse_wb_data(dto: dict) -> dict:
+    raw = dto.get("data") or ""
+    try:
+        obj = json.loads(raw) if raw.strip() else {}
+    except Exception:
+        obj = {}
+    obj.setdefault("Nodes", [])
+    return obj
+
+
+@mcp.tool()
+def list_whiteboards() -> list[dict]:
+    """List whiteboards (id, name, last-updated). Get a whiteboard's images with get_whiteboard_images."""
+    with _client() as c:
+        r = c.get("/api/whiteboards", params={"deleted": "false"})
+        r.raise_for_status()
+        return [{"id": w["id"], "name": w.get("name", ""), "updatedUtc": w.get("updatedUtc")} for w in r.json()]
+
+
+@mcp.tool()
+def get_whiteboard_images(whiteboard_id: str, out_dir: str = "") -> list[dict]:
+    """Get the image objects placed on a whiteboard. With `out_dir`, saves each as a PNG there and
+    returns file paths; without it, returns just which image nodes exist (no bytes)."""
+    with _client() as c:
+        r = c.get(f"/api/whiteboards/{whiteboard_id}")
+        if r.status_code == 404:
+            return [{"error": "not found", "id": whiteboard_id}]
+        r.raise_for_status()
+        data = _parse_wb_data(r.json())
+    out: list[dict] = []
+    for n in data.get("Nodes", []):
+        if n.get("Kind") != "image" or not n.get("Image"):
+            continue
+        entry = {"nodeId": n.get("Id")}
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+            path = os.path.join(out_dir, f"{n.get('Id')}.png")
+            try:
+                with open(path, "wb") as f:
+                    f.write(base64.b64decode(n["Image"]))
+                entry["path"] = path
+            except Exception as e:
+                entry["error"] = str(e)
+        else:
+            entry["hasImage"] = True
+        out.append(entry)
     return out
 
 
