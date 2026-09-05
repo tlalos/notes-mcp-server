@@ -1,6 +1,6 @@
 [project]
 name = "notes-mcp-server"
-version = "1.6.0"
+version = "1.7.0"
 description = "MCP server for the self-hosted Notes app — create, read, list, update and delete notes from any AI agent."
 readme = "README.md"
 requires-python = ">=3.10"

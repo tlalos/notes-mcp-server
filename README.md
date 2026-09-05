@@ -17,7 +17,8 @@ on the server.
 
 | Tool | What it does |
 |---|---|
-| `list_notes(query="", limit=50)` | List notes (pinned first, newest next). `query` filters by title/text/tags. Returns id, title, updated, pinned, notebook, tags. |
+| `list_notes(query="", limit=50)` | List notes (pinned first, newest next). `query` is a simple title/text/tags filter. Returns id, title, updated, pinned, notebook, tags. |
+| `search_notes(query, limit=30, deep=False)` | **Best content search** — case/accent‑insensitive, all words any order, returns a **context snippet** per hit (id, title, snippet). `deep=True` scans every note's body. |
 | `read_note(note_id)` | Get a note's **plain‑text content** and metadata. |
 | `create_note(title, content="", notebook="", tags="")` | Create a note (plain text). Returns the new `id`. |
 | `update_note(note_id, title=None, content=None, notebook=None, tags=None)` | Update fields; anything left `None` is unchanged. |
@@ -32,6 +33,7 @@ on the server.
 | `list_boards()` | List Kanban boards (id, name, updated). |
 | `read_board(board_id)` | A board's columns and cards (with ids). |
 | `search_boards(query, limit=50)` | Search all boards' cards (title, description, checklist) → hits with board/column/card context. |
+| `get_board_images(board_id, out_dir="")` | Get board card cover images (saves PNGs to `out_dir`, or lists which cards have images). |
 | `create_board(name, template="basic", columns=None)` | Create a board (template or explicit columns). |
 | `rename_board(board_id, name)` / `delete_board(board_id)` / `undelete_board(board_id)` | Rename / trash / restore a board. |
 | `add_column(board_id, title, color="")` / `delete_column(board_id, column)` / `move_column(board_id, column, position)` | Add / remove / reorder a column. |

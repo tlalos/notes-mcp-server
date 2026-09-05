@@ -19,6 +19,7 @@ import base64
 import json
 import mimetypes
 import os
+import unicodedata
 import uuid
 from typing import Any
 
@@ -74,6 +75,99 @@ def list_notes(query: str = "", limit: int = 50) -> list[dict]:
         r = c.get("/api/notes", params=params)
         r.raise_for_status()
         return [_summary(n) for n in r.json()[: max(1, limit)]]
+
+
+def _fold(s: str) -> str:
+    """Lowercase + strip accents, so search is case- and accent-insensitive (Greek/accented text too)."""
+    s = unicodedata.normalize("NFD", s or "")
+    return "".join(c for c in s if unicodedata.category(c) != "Mn").lower()
+
+
+def _fold_map(s: str):
+    """Folded text plus a map from each folded char position back to the original string position."""
+    out, idx = [], []
+    for i, ch in enumerate(s or ""):
+        f = "".join(c for c in unicodedata.normalize("NFD", ch) if unicodedata.category(c) != "Mn").lower() or ch.lower()
+        for _ in f:
+            idx.append(i)
+        out.append(f)
+    return "".join(out), idx
+
+
+@mcp.tool()
+def search_notes(query: str, limit: int = 30, context_chars: int = 160, deep: bool = False) -> list[dict]:
+    """Full-text note search that returns each match WITH a context snippet so you can actually locate
+    it. It is case- and accent-insensitive (works for Greek/accented text, unlike the raw server filter)
+    and matches **all words** of the query in any order, across the title, tags and body. Includes
+    archived notes. If a normal search misses something, pass deep=True to scan every note's body
+    (thorough but slower). Returns [{id, title, snippet, matchedIn}]. Prefer this over list_notes when
+    searching note *content*."""
+    tokens = [t for t in _fold(query).split() if t]
+    if not tokens:
+        return []
+    with _client() as c:
+        summaries = []
+        for archived in ("false", "true"):
+            try:
+                rr = c.get("/api/notes", params={"deleted": "false", "archived": archived})
+                if rr.status_code == 200:
+                    summaries.extend(rr.json())
+            except Exception:
+                pass
+
+        candidate_ids: set[str] = set()
+        if deep:
+            candidate_ids = {s["id"] for s in summaries}
+        else:
+            # Cheap pass: match the title/tags we already have (folded).
+            for s in summaries:
+                hay = _fold((s.get("title", "") or "") + " " + (s.get("tags", "") or ""))
+                if all(t in hay for t in tokens):
+                    candidate_ids.add(s["id"])
+            # Server-side body search (ASCII case-insensitive) for the phrase and each word.
+            for term in {query.strip(), *query.split()}:
+                if not term.strip():
+                    continue
+                for archived in ("false", "true"):
+                    try:
+                        rr = c.get("/api/notes", params={"deleted": "false", "archived": archived, "q": term})
+                        for s in rr.json():
+                            candidate_ids.add(s["id"])
+                    except Exception:
+                        pass
+
+        title_of = {s["id"]: (s.get("title") or "(untitled)") for s in summaries}
+        hits, fetched = [], 0
+        for nid in candidate_ids:
+            if len(hits) >= max(1, limit) or fetched >= 500:
+                break
+            try:
+                dto = c.get(f"/api/notes/{nid}").json()
+            except Exception:
+                continue
+            fetched += 1
+            title = dto.get("title") or title_of.get(nid) or "(untitled)"
+            text = dto.get("plainText", "") or ""
+            fbody, imap = _fold_map(text)
+            combined = _fold(title) + "\n" + fbody + "\n" + _fold(dto.get("tags", "") or "")
+            if not all(t in combined for t in tokens):
+                continue
+            pos = -1
+            for t in tokens:
+                p = fbody.find(t)
+                if p >= 0:
+                    pos = p
+                    break
+            if pos >= 0 and imap:
+                o = imap[pos]
+                start = max(0, o - context_chars // 2)
+                end = min(len(text), o + context_chars // 2)
+                snippet = ("…" if start > 0 else "") + text[start:end].replace("\n", " ").strip() + ("…" if end < len(text) else "")
+                where = "body"
+            else:
+                snippet, where = title, "title/tags"
+            hits.append({"id": nid, "title": title, "snippet": snippet, "matchedIn": where})
+        return hits
 
 
 @mcp.tool()
@@ -240,7 +334,8 @@ def archive_note(note_id: str, archived: bool = True) -> dict:
 @mcp.tool()
 def list_attachments(note_id: str) -> list[dict]:
     """List the files attached to a note. Returns each attachment's id, file name, content
-    type, size in bytes and creation time (not the file bytes — use download_attachment)."""
+    type, size in bytes and creation time (not the file bytes — use download_attachment).
+    Also works for a board **card**: pass the card id (from read_board) as `note_id`."""
     with _client() as c:
         r = c.get(f"/api/notes/{note_id}/attachments")
         r.raise_for_status()
@@ -730,6 +825,40 @@ def search_boards(query: str, limit: int = 50) -> list[dict]:
                         if len(hits) >= max(1, limit):
                             return hits
     return hits
+
+
+@mcp.tool()
+def get_board_images(board_id: str, out_dir: str = "") -> list[dict]:
+    """Get the cover images on a board's cards. With `out_dir`, saves each card image as a PNG there and
+    returns file paths; without it, returns just which cards have an image (no bytes). NOTE: a card's
+    *file* attachments (including image files) are listed with `list_attachments(<card id>)` and fetched
+    with `download_attachment` — the attachment tools accept a note id OR a card id."""
+    with _client() as c:
+        r = c.get(f"/api/boards/{board_id}")
+        if r.status_code == 404:
+            return [{"error": "not found", "id": board_id}]
+        r.raise_for_status()
+        data = _parse_board_data(r.json())
+    out: list[dict] = []
+    for col in data["Columns"]:
+        for card in col.get("Cards", []):
+            img = card.get("Image")
+            if not img:
+                continue
+            entry = {"cardId": card.get("Id"), "cardTitle": card.get("Title", ""), "column": col.get("Title", "")}
+            if out_dir:
+                os.makedirs(out_dir, exist_ok=True)
+                path = os.path.join(out_dir, f"{card.get('Id')}.png")
+                try:
+                    with open(path, "wb") as f:
+                        f.write(base64.b64decode(img))
+                    entry["path"] = path
+                except Exception as e:
+                    entry["error"] = str(e)
+            else:
+                entry["hasImage"] = True
+            out.append(entry)
+    return out
 
 
 @mcp.tool()

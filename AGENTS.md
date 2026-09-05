@@ -92,15 +92,24 @@ After registering, ask the agent to run the `health` tool (should return `{"ok":
 reach the server over HTTPS.
 
 ## 5. Available tools
-**Notes:** `list_notes`, `read_note`, `create_note`, `update_note`, `delete_note`, `archive_note`,
-`capture_markdown`, `capture_image`.
+**Notes:** `list_notes`, `search_notes`, `read_note`, `create_note`, `update_note`, `delete_note`,
+`archive_note`, `capture_markdown`, `capture_image`.
 **Attachments:** `list_attachments`, `attach_file`, `download_attachment`, `delete_attachment`.
+**Images:** `get_board_images`, plus the attachment tools (they accept a note id or a card id).
 **Kanban boards:** `list_boards`, `read_board`, `search_boards`, `create_board`, `rename_board`,
 `delete_board`, `undelete_board`, `add_column`, `delete_column`, `move_column`, `add_card`,
 `update_card`, `move_card`, `archive_card`, `unarchive_card`, `delete_card`.
 
-**Searching:** notes → `list_notes(query="…")` (matches title, text, tags); board cards →
-`search_boards(query="…")` (matches card title, description, checklist).
+**Searching:** notes → **`search_notes(query="…")`** (best: case/accent-insensitive, all words in any
+order, returns a context **snippet** per hit — use this to actually *locate* content; `list_notes` is
+just a title filter). Board cards → `search_boards(query="…")` (card title, description, checklist).
+If `search_notes` still misses something, retry with `deep=True` (scans every note's body).
+
+**Getting images:** a note's/card's **file attachments** (including image files) →
+`list_attachments(id)` then `download_attachment(attachment_id, save_path)` — `id` may be a **note id
+or a board card id**. A board's **card cover images** → `get_board_images(board_id, out_dir="…")`
+(saves PNGs, returns paths). (Images embedded inside a note's rich body aren't individually extractable
+via the API — attach them as files if an agent needs to fetch them.)
 **Misc:** `health`.
 See [README.md](README.md#tools) for parameters, the plain-text vs. Markdown note, how to
 insert images (`capture_image`), attach files (`attach_file`), and manage boards (§10).
